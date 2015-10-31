@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace Com.EricReber.InfiniteBackGround
 {
-	public class InfiniteParallaxBackGround : MonoBehaviour{
+	public class InfiniteBackGround : MonoBehaviour{
 		[Tooltip("Camera to used to display this background")]
 		public Camera parallaxCamera;
 		
@@ -20,12 +20,6 @@ namespace Com.EricReber.InfiniteBackGround
 
 		private List<PrefabPool> prefabsPool = new List<PrefabPool>();
 
-		//The index of the first (left) element displayed on the screen -1 mean no element on screen
-		private int firstElementIndex = -1;
-
-		//The index of the last (right) element displayed on the screen -1 mean no element on screen
-		private int lastElementIndex = -1;
-
 		//Retrieve the Camera boundaries in the World Cordinate system using the view port 
 		//(Viewport bottom left = 0,0 top right = 1,1
 		private float cameraLeftBound{
@@ -37,6 +31,7 @@ namespace Com.EricReber.InfiniteBackGround
 		
 		//Store the rightest postion displaying a backGround
 		private float worldRightBound;
+		private float worldLeftBound;
 
 		void Start(){
 			//When we start, I add one copy of each prefab in the PrefabPool
@@ -51,25 +46,15 @@ namespace Com.EricReber.InfiniteBackGround
 		//This methode is used to add the prefab to the scene so it takes all the view port
 		private void fillUpTheViewPort(){
 			worldRightBound = cameraLeftBound;
-			
+			worldLeftBound = cameraLeftBound;
 			while (worldRightBound<cameraRightBound){
 				Vector3 initialPosition = new Vector3(worldRightBound,verticalOffset);
-				worldRightBound = DisplayRandomPrefab(initialPosition);
+				worldRightBound = DisplayRandomPrefab(initialPosition,BackGroundInsertionDirection.Right).rightBound;
 			}
-
-			//When we fillUp the screen for the first time the first element is alway at index 0
-			if(firstElementIndex == -1){
-				firstElementIndex = 0;
-			}
-
-			if(lastElementIndex == -1){
-				lastElementIndex = elementsOnScreen.Count;
-			}
-
 		}
 		
 		//Display a Random Prefab and position it at initialPosition return the x coordinate for the right bound
-		private float DisplayRandomPrefab(Vector3 initialPosition){
+		private BackGroundElement DisplayRandomPrefab(Vector3 initialPosition,BackGroundInsertionDirection direction){
 			int randomIndex = 0;
 			if(prefabsPool.Count==0){
 				Debug.LogError("You need at least one prefab in the elements list.");
@@ -80,32 +65,80 @@ namespace Com.EricReber.InfiniteBackGround
 			//The element that will be rendered
 			BackGroundElement renderedObject = prefabsPool[randomIndex].GetAvailableObject();
 
-			renderedObject.DisplayAtPosition(initialPosition);
-			elementsOnScreen.Add(renderedObject);
+			renderedObject.DisplayAtPosition(initialPosition,direction);
 
-			return renderedObject.rightBound;
+			if(direction == BackGroundInsertionDirection.Right){
+				elementsOnScreen.Add(renderedObject);
+			}else{
+				elementsOnScreen.Insert(0,renderedObject);
+			}
+
+			return renderedObject;
 		}
-		
+		private void RemovePrefab(PrefabRank rank){
+			//we can only remove the first or the last prefab
+			if(rank == PrefabRank.First){
+				//Move the world left border
+				worldLeftBound+=elementsOnScreen[0].width;
+				//Disable the gameObject
+				elementsOnScreen[0].Remove();
+				//Remove it from the onScreen list
+				elementsOnScreen.RemoveAt(0);
+			}else{
+				//Move the world Right border
+				worldRightBound-=elementsOnScreen[elementsOnScreen.Count-1].width;
+				//Disable the gameObject
+				elementsOnScreen[elementsOnScreen.Count-1].Remove();
+				//Remove it from the onScreen list
+				elementsOnScreen.RemoveAt(elementsOnScreen.Count-1);
+			}
+		}
 		void Update()
 		{
 			//If the camera is rendering something without a background we add one
+			//Check on the right
 			if(cameraRightBound>worldRightBound){
 				Vector3 initialPosition = new Vector3(worldRightBound,verticalOffset);
-				worldRightBound = DisplayRandomPrefab(initialPosition);
-				
+				worldRightBound = DisplayRandomPrefab(initialPosition,BackGroundInsertionDirection.Right).rightBound;	
+				Trace("add right");
+			}
+			//Check on the left
+			if(cameraLeftBound<worldLeftBound){
+				Vector3 initialPosition = new Vector3(worldLeftBound,verticalOffset);
+				worldLeftBound = DisplayRandomPrefab(initialPosition,BackGroundInsertionDirection.Left).leftBound;	
+				Trace("add left");
 			}
 
 			//If we have element that are not displayed by the camera any more we disable them
-			if(elementsOnScreen[firstElementIndex].rightBound<cameraLeftBound){
-				elementsOnScreen[firstElementIndex].Remove();
-
-				if(firstElementIndex<elementsOnScreen.Count){
-					firstElementIndex++;
-				}else{
-					firstElementIndex = 0;
-				}
+			//Check on the left
+			if(elementsOnScreen[0].rightBound<cameraLeftBound){
+				RemovePrefab(PrefabRank.First);
+				Trace("Remove left");
+			}
+			//Check on the Right
+			if(elementsOnScreen[elementsOnScreen.Count-1].leftBound>cameraRightBound){
+				RemovePrefab(PrefabRank.Last);
+				Trace("Remove Right");
 			}
 		}
+
+		public void Trace(string header){
+			string s0 = (header);
+			string s1 = ("World Left Bound = "+worldLeftBound+ " World Right Bound = "+worldRightBound);
+			string s2 = ("Camera Left Bound = "+cameraLeftBound+ " Camera Right Bound = "+cameraRightBound);
+			string s3 = ("First Element = "+elementsOnScreen[0].leftBound+ " Last Element = "+elementsOnScreen[elementsOnScreen.Count-1].rightBound);
+			Debug.Log(s0+"\n"+s1+"\n"+s2+"\n"+s3);
+		}
+	}
+
+	public enum BackGroundInsertionDirection{
+		Left,
+		Right
+	}
+
+	public enum PrefabRank{
+		First,
+		Last,
 	}
 
 	//
@@ -113,6 +146,9 @@ namespace Com.EricReber.InfiniteBackGround
 		public GameObject gameObject;
 		public float width;
 		public float rightBound;
+		public float leftBound{
+			get{ return rightBound-width;}
+		}
 
 		private Renderer renderer;
 
@@ -122,19 +158,32 @@ namespace Com.EricReber.InfiniteBackGround
 			width = renderer.bounds.size.x;
 		}
 
-		public void DisplayAtPosition(Vector3 pos){
+		public void DisplayAtPosition(Vector3 pos,BackGroundInsertionDirection direction){
 			//We are placing the obect based on his center so we /2.0f the width
-			Vector3 newPos = new Vector3(pos.x+width/2.0f,pos.y);
+
+			int directionFactor;
+			if(direction == BackGroundInsertionDirection.Right){
+				directionFactor = 1 ;
+			}else{
+				directionFactor = -1;
+			}
+			Vector3 newPos = new Vector3(pos.x+((width/2.0f)*directionFactor),pos.y);;
 			gameObject.transform.position = newPos;
 			gameObject.SetActive(true);
 			//We add it to the element on screen
 
 			//We want the right bound, not the center, that's why we don't divide by 2
-			rightBound = pos.x+width;
+			if(direction == BackGroundInsertionDirection.Right){
+				rightBound = pos.x+(width*directionFactor);
+			}else{
+				rightBound = pos.x;
+			}
+
 		}
 
 		public void Remove(){
 			gameObject.SetActive(false);
+
 		}
 	}
 
