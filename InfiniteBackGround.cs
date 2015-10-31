@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace Com.EricReber.InfiniteBackGround
 {
-	public class InfiniteBackGround : MonoBehaviour{
+	public class InfiniteParallaxBackGround : MonoBehaviour{
 		[Tooltip("Camera to used to display this background")]
 		public Camera parallaxCamera;
 		
@@ -42,8 +42,7 @@ namespace Com.EricReber.InfiniteBackGround
 			//When we start, I add one copy of each prefab in the PrefabPool
 			foreach (GameObject obj in elements)
 			{
-				PrefabPool p = new PrefabPool();
-				p.SetPrefab(obj);
+				PrefabPool p = new PrefabPool(obj);
 				prefabsPool.Add(p);
 			}
 			fillUpTheViewPort();	
@@ -55,7 +54,7 @@ namespace Com.EricReber.InfiniteBackGround
 			
 			while (worldRightBound<cameraRightBound){
 				Vector3 initialPosition = new Vector3(worldRightBound,verticalOffset);
-				worldRightBound = instantiateRandomPrefab(initialPosition);
+				worldRightBound = DisplayRandomPrefab(initialPosition);
 			}
 
 			//When we fillUp the screen for the first time the first element is alway at index 0
@@ -69,8 +68,8 @@ namespace Com.EricReber.InfiniteBackGround
 
 		}
 		
-		//Instantiate a Random Prefab and position it at initialPosition return the x coordinate for the right bound
-		private float instantiateRandomPrefab(Vector3 initialPosition){
+		//Display a Random Prefab and position it at initialPosition return the x coordinate for the right bound
+		private float DisplayRandomPrefab(Vector3 initialPosition){
 			int randomIndex = 0;
 			if(prefabsPool.Count==0){
 				Debug.LogError("You need at least one prefab in the elements list.");
@@ -78,23 +77,13 @@ namespace Com.EricReber.InfiniteBackGround
 				randomIndex = Mathf.Abs(Random.Range(0,prefabsPool.Count));
 			}
 
-			//The prefab That will be rendered
-			GameObject renderedPrefab = prefabsPool[randomIndex].GerAvailableGameObject();
-			//We'll use the renderer to get the refab's width
-			float prefabWidth = renderedPrefab.GetComponent<Renderer>().bounds.size.x;
-			//We are placing the obect based on his center so we /2.0f the width
-			Vector3 instantiatedPosition = new Vector3((initialPosition.x+prefabWidth/2.0f)-renderedPrefab.transform.position.x,initialPosition.y-renderedPrefab.transform.position.y);
-			renderedPrefab.transform.Translate(instantiatedPosition,Space.World);
-			renderedPrefab.SetActive(true);
-			//We add it to the element on screen
-			BackGroundElement bgElem = new BackGroundElement();
-			bgElem.gameObject = renderedPrefab;
-			bgElem.width = prefabWidth;
-			//We want the right bound, not the center, that's why we don't divide by 2
-			bgElem.rightBound = initialPosition.x+prefabWidth;
-			elementsOnScreen.Add(bgElem);
+			//The element that will be rendered
+			BackGroundElement renderedObject = prefabsPool[randomIndex].GetAvailableObject();
 
-			return bgElem.rightBound;
+			renderedObject.DisplayAtPosition(initialPosition);
+			elementsOnScreen.Add(renderedObject);
+
+			return renderedObject.rightBound;
 		}
 		
 		void Update()
@@ -102,45 +91,20 @@ namespace Com.EricReber.InfiniteBackGround
 			//If the camera is rendering something without a background we add one
 			if(cameraRightBound>worldRightBound){
 				Vector3 initialPosition = new Vector3(worldRightBound,verticalOffset);
-				worldRightBound = instantiateRandomPrefab(initialPosition);
+				worldRightBound = DisplayRandomPrefab(initialPosition);
 				
 			}
 
 			//If we have element that are not displayed by the camera any more we disable them
 			if(elementsOnScreen[firstElementIndex].rightBound<cameraLeftBound){
-				elementsOnScreen[firstElementIndex].gameObject.SetActive(false);
+				elementsOnScreen[firstElementIndex].Remove();
+
 				if(firstElementIndex<elementsOnScreen.Count){
 					firstElementIndex++;
 				}else{
 					firstElementIndex = 0;
 				}
-
 			}
-			//On check si tout le view port est couvert par des gameObject
-			//Si c'est pas le cas on ajoute ce qui est nécessaire pour le couvrir
-			//On commence par regarder si on a qqch sur la bordure droite
-			//Pour chaque elem on regarde si xl est >= pl et xl <= pr
-			//Si on trouve qqch on place la nouvelle borne de verif xl' sur pr de l'element trouvé
-			
-			
-			//On regarde si il y a des gameObject qui ne sont plus dans le viewport de la camera.
-			//Si c'est le cas on les désactives
-			
-			
-			
-			
-			//Vector3 bg = clone.transform.position;
-			//Renderer r = clone.GetComponent<Renderer>();
-			//float objectLeftBound = bg.x-r.bounds.size.x/2.0f;
-			//float objectRightBound = bg.x+r.bounds.size.x/2.0f;
-			
-			//if(worldLeftBound>objectRightBound){
-			//	clone.SetActive(false);
-			//}else{
-			//	clone.SetActive(true);
-			//}
-			
-			//clone.transform.Translate(backGround.transform.position.x,backGround.transform.position.y,backGround.transform.position.z);
 		}
 	}
 
@@ -149,33 +113,56 @@ namespace Com.EricReber.InfiniteBackGround
 		public GameObject gameObject;
 		public float width;
 		public float rightBound;
+
+		private Renderer renderer;
+
+		public BackGroundElement(GameObject gObj){
+			gameObject = gObj;
+			renderer = gameObject.GetComponent<Renderer>();
+			width = renderer.bounds.size.x;
+		}
+
+		public void DisplayAtPosition(Vector3 pos){
+			//We are placing the obect based on his center so we /2.0f the width
+			Vector3 newPos = new Vector3(pos.x+width/2.0f,pos.y);
+			gameObject.transform.position = newPos;
+			gameObject.SetActive(true);
+			//We add it to the element on screen
+
+			//We want the right bound, not the center, that's why we don't divide by 2
+			rightBound = pos.x+width;
+		}
+
+		public void Remove(){
+			gameObject.SetActive(false);
+		}
 	}
 
 	public class PrefabPool{
 		private GameObject prefab;
-		private List<GameObject> gameObjectPool = new List<GameObject>();
+		private List<BackGroundElement> gameObjectPool = new List<BackGroundElement>();
 
-		public void SetPrefab(GameObject gameObject){
-			prefab = gameObject;
-
+		public PrefabPool(GameObject mainPrefab){
+			prefab = mainPrefab;
 		}
 
-		public GameObject GerAvailableGameObject(){
-			GameObject gameObject =null;
-			foreach (GameObject obj in gameObjectPool)
+		public BackGroundElement GetAvailableObject(){
+			BackGroundElement backgroundElem =null;
+			foreach (BackGroundElement obj in gameObjectPool)
 			{
-				if(obj.activeSelf==false){
-					gameObject = obj;
+				if(obj.gameObject.activeSelf==false){
+					backgroundElem = obj;
 					break;
 				}
 			}
 
 			//if we don't have any available gameObject we need to instansiate a new one
-			if(gameObject==null){
-				gameObject = GameObject.Instantiate(prefab, Vector3.zero, Quaternion.identity) as GameObject;
-				gameObjectPool.Add(gameObject);
+			if(backgroundElem==null){
+				GameObject gameObject = GameObject.Instantiate(prefab, Vector3.zero, Quaternion.identity) as GameObject;
+				backgroundElem = new BackGroundElement(gameObject);
+				gameObjectPool.Add(backgroundElem);
 			}
-			return gameObject;
+			return backgroundElem;
 		}
 	}
 }
